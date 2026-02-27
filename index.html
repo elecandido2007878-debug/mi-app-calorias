@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi App Calorías PRO</title>
+
+<style>
+:root{
+--bg:#f2f2f7;
+--card:#ffffff;
+--text:#000;
+--accent:#007aff;
+--good:#34c759;
+--bad:#ff3b30;
+}
+.dark{
+--bg:#1c1c1e;
+--card:#2c2c2e;
+--text:#ffffff;
+}
+body{
+margin:0;
+font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+background:var(--bg);
+color:var(--text);
+}
+.app{
+max-width:430px;
+margin:auto;
+padding:20px;
+}
+.card{
+background:var(--card);
+padding:15px;
+border-radius:16px;
+margin-bottom:15px;
+}
+input,select,button{
+width:100%;
+padding:10px;
+margin-top:8px;
+border-radius:10px;
+border:1px solid #ccc;
+font-size:15px;
+}
+button{
+background:var(--accent);
+color:white;
+border:none;
+font-weight:bold;
+}
+.small{
+background:#888;
+margin-top:6px;
+}
+.progress-bar{
+height:10px;
+background:#ddd;
+border-radius:10px;
+margin-top:10px;
+overflow:hidden;
+}
+.progress{
+height:100%;
+width:0%;
+background:var(--good);
+transition:0.3s;
+}
+.over{ background:var(--bad)!important; }
+ul{list-style:none;padding:0;margin:0;}
+li{
+display:flex;
+justify-content:space-between;
+padding:6px 0;
+border-bottom:1px solid #eee;
+font-size:14px;
+}
+canvas{margin-top:10px;}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+<h2>🔥 Mi Día</h2>
+
+<div class="card">
+<label>Fecha</label>
+<input type="date" id="datePicker">
+
+<label>Meta diaria</label>
+<input type="number" id="goalInput" value="1700">
+
+<input type="text" id="search" placeholder="Buscar comida..." oninput="renderFoods()">
+<select id="foodSelect"></select>
+<input type="number" id="qty" value="1" min="1">
+<button onclick="addFood()">Agregar</button>
+<button class="small" onclick="undo()">Deshacer</button>
+</div>
+
+<div class="card">
+<h3>➕ Agregar comida personalizada</h3>
+<input type="text" id="customName" placeholder="Nombre comida">
+<input type="number" id="customCal" placeholder="Calorías">
+<input type="number" id="customQty" value="1" min="1">
+<button onclick="addCustom()">Agregar personalizada</button>
+</div>
+
+<div class="card">
+<div>Total: <b><span id="total">0</span> kcal</b></div>
+<div>Déficit vs 2100: <b><span id="deficit"></span></b></div>
+<div class="progress-bar"><div id="progress" class="progress"></div></div>
+</div>
+
+<div class="card">
+<h3>💧 Agua</h3>
+<div>Vasos: <b id="water">0</b>/10</div>
+<button onclick="addWater()">+1 vaso</button>
+</div>
+
+<div class="card">
+<h3>📋 Comidas del día</h3>
+<ul id="dayList"></ul>
+<button class="small" onclick="resetDay()">Reiniciar día</button>
+</div>
+
+<div class="card">
+<h3>📊 Promedio últimos 7 días</h3>
+<canvas id="chart" height="150"></canvas>
+</div>
+
+<div class="card">
+<button onclick="toggleDark()">🌙 Modo oscuro</button>
+</div>
+
+</div>
+
+<script>
+const maintenance=2100;
+let data=JSON.parse(localStorage.getItem("data"))||{};
+let historyStack=[];
+let waterData=JSON.parse(localStorage.getItem("waterData"))||{};
+
+const today=new Date().toISOString().split("T")[0];
+document.getElementById("datePicker").value=today;
+
+const foods=[
+{name:"1 tostada pan lactal + queso crema",cal:140},
+{name:"2 tostadas integrales con toppings",cal:275},
+{name:"Sandwich jamon y queso",cal:275},
+{name:"2 panes lactales + chocolatada",cal:375},
+{name:"2 huevos",cal:140},
+{name:"Omelette tomate + queso + aceite",cal:285},
+{name:"2 huevos + verduras + aceite + queso",cal:450},
+{name:"Revuelto zapallitos completo",cal:375},
+{name:"Media cebolla",cal:20},
+{name:"1/4 morron",cal:15},
+{name:"2 zanahorias",cal:50},
+{name:"5 tomates cherry",cal:15},
+{name:"2 milanesas pollo finas",cal:275},
+{name:"Berenjena empanizada",cal:150},
+{name:"2 fajitas avena completas",cal:400},
+{name:"1 fajita con palta y mayonesa",cal:275},
+{name:"1/4 palta",cal:80},
+{name:"Avena + cacao + leche",cal:225},
+{name:"1 plato fideos con crema",cal:550},
+{name:"2 platos fideos con crema",cal:1100},
+{name:"4 piezas sushi",cal:150},
+{name:"2 vasos Coca Cola",cal:180},
+{name:"Brownie casero chico",cal:175},
+{name:"1 cda aceite",cal:90},
+{name:"1 cdita aceite",cal:45},
+{name:"1 cda queso crema",cal:55},
+{name:"30g queso cremoso",cal:100},
+{name:"1 cda mayonesa",cal:95}
+];
+
+function save(){
+localStorage.setItem("data",JSON.stringify(data));
+localStorage.setItem("waterData",JSON.stringify(waterData));
+}
+
+function getDate(){
+return document.getElementById("datePicker").value;
+}
+
+function renderFoods(){
+const search=document.getElementById("search").value.toLowerCase();
+const select=document.getElementById("foodSelect");
+select.innerHTML="";
+foods.filter(f=>f.name.toLowerCase().includes(search))
+.forEach(f=>{
+let opt=document.createElement("option");
+opt.value=f.cal;
+opt.textContent=f.name+" ("+f.cal+" kcal)";
+select.appendChild(opt);
+});
+}
+
+function addFood(){
+const date=getDate();
+if(!data[date]) data[date]=[];
+const cal=parseInt(foodSelect.value);
+const name=foodSelect.selectedOptions[0].text;
+const qty=parseInt(qty.value);
+historyStack.push(JSON.parse(JSON.stringify(data)));
+data[date].push({name,cal:cal*qty});
+save(); update();
+}
+
+function addCustom(){
+const date=getDate();
+if(!data[date]) data[date]=[];
+const name=document.getElementById("customName").value;
+const cal=parseInt(document.getElementById("customCal").value);
+const qty=parseInt(document.getElementById("customQty").value);
+if(name && cal){
+historyStack.push(JSON.parse(JSON.stringify(data)));
+data[date].push({name:name,cal:cal*qty});
+save(); update();
+}
+}
+
+function undo(){
+if(historyStack.length>0){
+data=historyStack.pop();
+save(); update();
+}
+}
+
+function resetDay(){
+const date=getDate();
+historyStack.push(JSON.parse(JSON.stringify(data)));
+data[date]=[];
+save(); update();
+}
+
+function addWater(){
+const date=getDate();
+if(!waterData[date]) waterData[date]=0;
+if(waterData[date]<10) waterData[date]++;
+save(); update();
+}
+
+function update(){
+const date=getDate();
+if(!data[date]) data[date]=[];
+if(!waterData[date]) waterData[date]=0;
+
+let total=0;
+dayList.innerHTML="";
+data[date].forEach((item,i)=>{
+total+=item.cal;
+let li=document.createElement("li");
+li.innerHTML=item.name+" - "+item.cal+" kcal";
+dayList.appendChild(li);
+});
+
+document.getElementById("total").innerText=total;
+let goal=parseInt(goalInput.value);
+let deficit=maintenance-total;
+document.getElementById("deficit").innerText=
+deficit>=0?deficit+" kcal 🔥":"+ "+Math.abs(deficit)+" ⚠️";
+
+let percent=(total/goal)*100;
+progress.style.width=percent+"%";
+if(total>goal) progress.classList.add("over");
+else progress.classList.remove("over");
+
+document.getElementById("water").innerText=waterData[date];
+
+drawChart();
+}
+
+function drawChart(){
+const ctx=document.getElementById("chart").getContext("2d");
+ctx.clearRect(0,0,400,150);
+let dates=Object.keys(data).slice(-7);
+dates.forEach((d,i)=>{
+let sum=data[d].reduce((a,b)=>a+b.cal,0);
+let height=(sum/2500)*120;
+ctx.fillStyle="#007aff";
+ctx.fillRect(i*50+20,130-height,25,height);
+});
+}
+
+function toggleDark(){
+document.body.classList.toggle("dark");
+}
+
+document.getElementById("datePicker").addEventListener("change",update);
+
+renderFoods();
+update();
+</script>
+</body>
+</html>
